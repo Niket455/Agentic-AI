@@ -60,6 +60,7 @@ class Employee:
         self.emp_no = emp_no
         self.emp_name = emp_name
         self.leaves = leaves
+        
 
 class Company:
     def __init__(self, cname, emps):

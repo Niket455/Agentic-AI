@@ -1,0 +1,19 @@
+{
+  "name": "FinTracker — Personal Finance",
+  "short_name": "FinTracker",
+  "description": "Offline-first personal finance tracker: budgets, expenses, savings, goals.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#10141c",
+  "theme_color": "#10141c",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%2310141c'/><text x='50%25' y='58%25' font-size='280' text-anchor='middle'>💸</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
