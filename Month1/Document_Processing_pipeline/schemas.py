@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class DocumentCreate(BaseModel):
@@ -9,3 +9,10 @@ class DocumentResponse(BaseModel):
     id: int
     filename: str
     status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentUpdate(BaseModel):
+    filename: str | None = None
+    status: str | None = None
