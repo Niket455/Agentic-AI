@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from pathlib import Path
+import aiofiles
+
+
+from fastapi import Depends, FastAPI, HTTPException, File, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,3 +131,54 @@ async def delete_document(
 
     await db.delete(document)
     await db.commit()
+
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...)
+):
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Filename is missing",
+        )
+
+    filename = Path(file.filename).name
+    extension = Path(filename).suffix.lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and DOCX files are allowed",
+        )
+
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type",
+        )
+
+    file_path = UPLOAD_DIR / filename
+
+    async with aiofiles.open(file_path, "wb") as output_file:
+        while chunk := await file.read(1024 * 1024):
+            await output_file.write(chunk)
+
+    await file.close()
+
+    return {
+        "filename": filename,
+        "content_type": file.content_type,
+        "message": "File uploaded successfully",
+    }
