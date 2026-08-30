@@ -144,9 +144,14 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 
-@app.post("/documents/upload")
+@app.post("/documents/upload",
+          response_model=DocumentResponse,
+          status_code=201,
+)
+
 async def upload_document(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
 ):
     if not file.filename:
         raise HTTPException(
@@ -171,14 +176,43 @@ async def upload_document(
 
     file_path = UPLOAD_DIR / filename
 
-    async with aiofiles.open(file_path, "wb") as output_file:
-        while chunk := await file.read(1024 * 1024):
-            await output_file.write(chunk)
+    try:
+        # Save actual file
+        file_size = 0
 
-    await file.close()
+        async with aiofiles.open(file_path, "wb") as output_file:
+            while chunk := await file.read(1024 * 1024):
+                file_size += len(chunk)
+                await output_file.write(chunk)
 
-    return {
-        "filename": filename,
-        "content_type": file.content_type,
-        "message": "File uploaded successfully",
-    }
+        # Create database record
+        new_document = Document(
+            filename=filename,
+            file_path=str(file_path),
+            content_type=file.content_type,
+            file_size=file_size
+       
+        )
+
+        db.add(new_document)
+
+        # Save database changes
+        await db.commit()
+
+        # Get generated values such as ID
+        await db.refresh(new_document)
+
+        return new_document
+
+    except Exception:
+        # Undo database transaction
+        await db.rollback()
+
+        # Delete file if it was already saved
+        if file_path.exists():
+            file_path.unlink()
+
+        raise
+
+    finally:
+        await file.close()

@@ -8,6 +8,9 @@ class DocumentCreate(BaseModel):
 class DocumentResponse(BaseModel):
     id: int
     filename: str
+    file_path: str
+    content_type: str
+    file_size: int
     status: str
 
     model_config = ConfigDict(from_attributes=True)
