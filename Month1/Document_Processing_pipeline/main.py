@@ -38,7 +38,10 @@ async def create_document(
 ):
     #takes data from the Pydantic schema and creates a SQLAlchemy model.
     new_document = Document(
-        filename=document.filename
+        filename=document.filename,
+        file_path=f"uploads/{document.filename}",
+        content_type="application/octet-stream",
+        file_size=0,
     )
 
     db.add(new_document)
@@ -191,7 +194,7 @@ async def upload_document(
             file_path=str(file_path),
             content_type=file.content_type,
             file_size=file_size
-       
+        
         )
 
         db.add(new_document)
