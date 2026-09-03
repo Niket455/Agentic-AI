@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from pathlib import Path
-import aiofiles
 
+import aiofiles
+import asyncio
+from extractor import extract_text
 
 from fastapi import Depends, FastAPI, HTTPException, File, UploadFile
 from sqlalchemy import select
@@ -167,21 +169,24 @@ async def upload_document(
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
-    stored_filename = f"{uuid4().hex}{extension}"
 
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Only PDF and DOCX files are allowed",
         )
+    
 
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
             detail="Unsupported file type",
         )
-
+    
+    stored_filename = f"{uuid4().hex}{extension}"
     file_path = UPLOAD_DIR / stored_filename
+
+    file_size = 0
 
     try:
         # Save actual file
@@ -192,13 +197,18 @@ async def upload_document(
                 file_size += len(chunk)
                 await output_file.write(chunk)
 
+        text = await asyncio.to_thread(
+            extract_text,
+            file_path,
+)
+
         # Create database record
         new_document = Document(
             filename=original_filename,
             file_path=str(file_path),
             content_type=file.content_type,
-            file_size=file_size
-        
+            file_size=file_size,
+            extracted_text=text
         )
 
         db.add(new_document)
@@ -223,3 +233,6 @@ async def upload_document(
 
     finally:
         await file.close()
+
+
+
