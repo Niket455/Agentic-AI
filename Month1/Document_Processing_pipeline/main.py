@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 
+from uuid import uuid4
+
 from pathlib import Path
 import aiofiles
 
@@ -162,8 +164,10 @@ async def upload_document(
             detail="Filename is missing",
         )
 
-    filename = Path(file.filename).name
-    extension = Path(filename).suffix.lower()
+    original_filename = Path(file.filename).name
+    extension = Path(original_filename).suffix.lower()
+
+    stored_filename = f"{uuid4().hex}{extension}"
 
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -177,7 +181,7 @@ async def upload_document(
             detail="Unsupported file type",
         )
 
-    file_path = UPLOAD_DIR / filename
+    file_path = UPLOAD_DIR / stored_filename
 
     try:
         # Save actual file
@@ -190,7 +194,7 @@ async def upload_document(
 
         # Create database record
         new_document = Document(
-            filename=filename,
+            filename=original_filename,
             file_path=str(file_path),
             content_type=file.content_type,
             file_size=file_size
