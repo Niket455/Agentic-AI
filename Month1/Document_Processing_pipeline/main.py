@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 
 from uuid import uuid4
 
-from pathlib import Path
 
+
+from pathlib import Path
+from chunks import chunk_text
 from text_cleaner import clean_text
 
 import aiofiles
@@ -15,8 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import Base, engine, get_db
-from models import Document
-from schemas import DocumentCreate, DocumentResponse, DocumentUpdate
+from models import Document, DocumentChunk
+from schemas import DocumentCreate, DocumentResponse, DocumentUpdate, DocumentChunkResponse
 
 
 @asynccontextmanager
@@ -153,11 +155,11 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 
-@app.post("/documents/upload",
-          response_model=DocumentResponse,
-          status_code=201,
+@app.post(
+    "/documents/upload",
+    response_model=DocumentResponse,
+    status_code=201,
 )
-
 async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -171,64 +173,88 @@ async def upload_document(
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
-
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Only PDF and DOCX files are allowed",
         )
-    
 
-    if file.content_type not in ALLOWED_CONTENT_TYPES:
+    content_type = file.content_type
+
+    if content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
             detail="Unsupported file type",
         )
-    
+
     stored_filename = f"{uuid4().hex}{extension}"
     file_path = UPLOAD_DIR / stored_filename
 
     file_size = 0
 
     try:
-        # Save actual file
-        file_size = 0
+        # 1. Save the file
+        async with aiofiles.open(
+            file_path,
+            "wb",
+        ) as output_file:
 
-        async with aiofiles.open(file_path, "wb") as output_file:
             while chunk := await file.read(1024 * 1024):
                 file_size += len(chunk)
                 await output_file.write(chunk)
 
+        # 2. Extract text
         text = await asyncio.to_thread(
             extract_text,
             file_path,
-)
+        )
+
+        # 3. Clean text
         text = clean_text(text)
 
-        # Create database record
+        # 4. Create chunks
+        chunks = chunk_text(text)
+
+        # 5. Create document
         new_document = Document(
             filename=original_filename,
-            file_path=str(file_path),
-            content_type=file.content_type,
+            file_path=file_path.as_posix(),
+            content_type=content_type,
             file_size=file_size,
-            extracted_text=text
+            extracted_text=text,
         )
 
         db.add(new_document)
 
-        # Save database changes
+        # Get database-generated ID
+        await db.flush()
+
+        # 6. Create chunk records
+        chunk_objects = []
+
+        for index, chunk in enumerate(chunks):
+            chunk_object = DocumentChunk(
+                document_id=new_document.id,
+                chunk_index=index,
+                content=chunk,
+            )
+
+            chunk_objects.append(chunk_object)
+
+        # 7. Add chunks to session
+        db.add_all(chunk_objects)
+
+        # 8. Commit document + chunks
         await db.commit()
 
-        # Get generated values such as ID
+        # 9. Refresh document
         await db.refresh(new_document)
 
         return new_document
 
     except Exception:
-        # Undo database transaction
         await db.rollback()
 
-        # Delete file if it was already saved
         if file_path.exists():
             file_path.unlink()
 
@@ -238,4 +264,34 @@ async def upload_document(
         await file.close()
 
 
+@app.get(
+    "/documents/{doc_id}/chunks",
+    response_model=list[DocumentChunkResponse],
+)
+async def get_document_chunks(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    # First check that the document exists
+    document_result = await db.execute(
+        select(Document).where(Document.id == doc_id)
+    )
 
+    document = document_result.scalar_one_or_none()
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    # Get all chunks belonging to this document
+    result = await db.execute(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == doc_id)
+        .order_by(DocumentChunk.chunk_index)
+    )
+
+    chunks = result.scalars().all()
+
+    return chunks

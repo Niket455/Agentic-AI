@@ -19,3 +19,11 @@ class DocumentResponse(BaseModel):
 class DocumentUpdate(BaseModel):
     filename: str | None = None
     status: str | None = None
+
+class DocumentChunkResponse(BaseModel):
+    id: int
+    document_id: int
+    chunk_index: int
+    content: str
+
+    model_config = ConfigDict(from_attributes=True)
