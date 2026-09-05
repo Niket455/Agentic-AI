@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from pathlib import Path
 
+from text_cleaner import clean_text
+
 import aiofiles
 import asyncio
 from extractor import extract_text
@@ -201,6 +203,7 @@ async def upload_document(
             extract_text,
             file_path,
 )
+        text = clean_text(text)
 
         # Create database record
         new_document = Document(
