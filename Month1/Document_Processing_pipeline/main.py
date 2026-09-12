@@ -1,31 +1,32 @@
 from contextlib import asynccontextmanager
-
+from pathlib import Path
 from uuid import uuid4
 
-
-
-from pathlib import Path
-from chunks import chunk_text
-from text_cleaner import clean_text
-
 import aiofiles
-import asyncio
-from extractor import extract_text
 
-from fastapi import Depends, FastAPI, HTTPException, File, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import Base, engine, get_db
+from database import engine, get_db
 from models import Document, DocumentChunk
-from schemas import DocumentCreate, DocumentResponse, DocumentUpdate, DocumentChunkResponse
-
+from processing_service import process_document
+from schemas import (
+    DocumentCreate,
+    DocumentResponse,
+    DocumentUpdate,
+    DocumentChunkResponse,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     yield
 
     await engine.dispose()
@@ -154,31 +155,35 @@ ALLOWED_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
-
 @app.post(
     "/documents/upload",
     response_model=DocumentResponse,
-    status_code=201,
+    status_code=202,
 )
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
+    # 1. Check filename
     if not file.filename:
         raise HTTPException(
             status_code=400,
             detail="Filename is missing",
         )
 
+    # 2. Get original filename
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
+    # 3. Validate extension
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Only PDF and DOCX files are allowed",
         )
 
+    # 4. Validate content type
     content_type = file.content_type
 
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -187,13 +192,15 @@ async def upload_document(
             detail="Unsupported file type",
         )
 
+    # 5. Generate unique storage filename
     stored_filename = f"{uuid4().hex}{extension}"
+
     file_path = UPLOAD_DIR / stored_filename
 
     file_size = 0
 
     try:
-        # 1. Save the file
+        # 6. Save the actual file
         async with aiofiles.open(
             file_path,
             "wb",
@@ -203,53 +210,33 @@ async def upload_document(
                 file_size += len(chunk)
                 await output_file.write(chunk)
 
-        # 2. Extract text
-        text = await asyncio.to_thread(
-            extract_text,
-            file_path,
-        )
-
-        # 3. Clean text
-        text = clean_text(text)
-
-        # 4. Create chunks
-        chunks = chunk_text(text)
-
-        # 5. Create document
+        # 7. Create database record
         new_document = Document(
             filename=original_filename,
             file_path=file_path.as_posix(),
             content_type=content_type,
             file_size=file_size,
-            extracted_text=text,
+            status="pending",
         )
 
         db.add(new_document)
 
-        # Get database-generated ID
+        # 8. Get database-generated ID
         await db.flush()
 
-        # 6. Create chunk records
-        chunk_objects = []
-
-        for index, chunk in enumerate(chunks):
-            chunk_object = DocumentChunk(
-                document_id=new_document.id,
-                chunk_index=index,
-                content=chunk,
-            )
-
-            chunk_objects.append(chunk_object)
-
-        # 7. Add chunks to session
-        db.add_all(chunk_objects)
-
-        # 8. Commit document + chunks
+        # 9. Permanently save the Document record
         await db.commit()
 
-        # 9. Refresh document
+        # 10. Refresh to get final DB values
         await db.refresh(new_document)
 
+        # 11. Schedule processing in the background
+        background_tasks.add_task(
+            process_document,
+            new_document.id,
+        )
+
+        # 12. Return immediately
         return new_document
 
     except Exception:

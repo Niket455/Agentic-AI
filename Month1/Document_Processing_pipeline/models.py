@@ -12,10 +12,11 @@ class Document(Base):
     file_size = Column(Integer, nullable=False)
     status = Column(String, nullable=False, default="pending")
     extracted_text = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
 
 
 class DocumentChunk(Base):
-    
+
     __tablename__ = "document_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
