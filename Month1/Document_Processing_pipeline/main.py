@@ -4,10 +4,12 @@ from uuid import uuid4
 
 import aiofiles
 
+from redis_queue import create_redis_pool
+
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
+    Request,
     File,
     HTTPException,
     UploadFile,
@@ -25,12 +27,15 @@ from schemas import (
     DocumentChunkResponse,
 )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.redis = await create_redis_pool()
+
     yield
 
+    await app.state.redis.aclose()
     await engine.dispose()
-
 
 app = FastAPI(lifespan=lifespan)
 
@@ -161,29 +166,25 @@ ALLOWED_CONTENT_TYPES = {
     status_code=202,
 )
 async def upload_document(
-    background_tasks: BackgroundTasks,
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Check filename
     if not file.filename:
         raise HTTPException(
             status_code=400,
             detail="Filename is missing",
         )
 
-    # 2. Get original filename
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
-    # 3. Validate extension
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Only PDF and DOCX files are allowed",
         )
 
-    # 4. Validate content type
     content_type = file.content_type
 
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -192,15 +193,13 @@ async def upload_document(
             detail="Unsupported file type",
         )
 
-    # 5. Generate unique storage filename
     stored_filename = f"{uuid4().hex}{extension}"
-
     file_path = UPLOAD_DIR / stored_filename
 
     file_size = 0
 
     try:
-        # 6. Save the actual file
+        # Save the uploaded file.
         async with aiofiles.open(
             file_path,
             "wb",
@@ -210,7 +209,7 @@ async def upload_document(
                 file_size += len(chunk)
                 await output_file.write(chunk)
 
-        # 7. Create database record
+        # Create the document record.
         new_document = Document(
             filename=original_filename,
             file_path=file_path.as_posix(),
@@ -221,22 +220,28 @@ async def upload_document(
 
         db.add(new_document)
 
-        # 8. Get database-generated ID
+        # Get the database-generated document ID.
         await db.flush()
 
-        # 9. Permanently save the Document record
+        # Save the document.
         await db.commit()
 
-        # 10. Refresh to get final DB values
         await db.refresh(new_document)
 
-        # 11. Schedule processing in the background
-        background_tasks.add_task(
-            process_document,
+        # Put the processing job into Redis.
+        redis = request.app.state.redis
+
+        job = await redis.enqueue_job(
+            "process_document_job",
             new_document.id,
         )
 
-        # 12. Return immediately
+        if job is None:
+            raise RuntimeError(
+                "Document processing job could not be queued"
+            )
+
+        # Return immediately.
         return new_document
 
     except Exception:
@@ -249,7 +254,6 @@ async def upload_document(
 
     finally:
         await file.close()
-
 
 @app.get(
     "/documents/{doc_id}/chunks",
