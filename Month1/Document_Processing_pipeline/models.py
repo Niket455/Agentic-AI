@@ -1,9 +1,11 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Text
+from datetime import datetime
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, DateTime
 from database import Base
 
 
 class Document(Base):
     __tablename__ = "documents"
+    
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=False)
@@ -11,6 +13,7 @@ class Document(Base):
     content_type = Column(String, nullable=False)
     file_size = Column(Integer, nullable=False)
     status = Column(String, nullable=False, default="pending")
+    processing_started_at = Column(DateTime,nullable=True,)
     extracted_text = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
 
