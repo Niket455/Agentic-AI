@@ -1,0 +1,7 @@
+langchain
+python-dotenv
+ipykernel
+langchain_community
+pypdf
+bs4
+wikipedia
