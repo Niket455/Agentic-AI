@@ -1,7 +1,11 @@
 langchain
 python-dotenv
 ipykernel
-langchain_community
+langchain-community
 pypdf
 bs4
 wikipedia
+langchain-text-splitters
+chromadb
+faiss-cpu
+langchain_chroma
