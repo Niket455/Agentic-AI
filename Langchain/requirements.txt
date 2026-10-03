@@ -9,3 +9,5 @@ langchain-text-splitters
 chromadb
 faiss-cpu
 langchain_chroma
+langchain_community
+streamlit
