@@ -1,3 +1,12 @@
+"""
+Recovery for documents stuck in the "processing" state.
+
+A crashed or killed worker can leave a document marked "processing" forever.
+This script finds documents whose processing started longer ago than
+``STALE_AFTER_MINUTES``, resets them to "pending", and re-queues them so they
+are picked up again.
+"""
+
 import asyncio
 from datetime import datetime, timedelta
 
@@ -8,10 +17,13 @@ from models import Document
 from redis_queue import create_redis_pool
 
 
+# How long a document may stay "processing" before it is considered stuck.
 STALE_AFTER_MINUTES = 15
 
 
 async def recover_stale_jobs():
+    """Reset and re-queue documents stuck in the "processing" state."""
+
     cutoff_time = datetime.utcnow() - timedelta(
         minutes=STALE_AFTER_MINUTES
     )

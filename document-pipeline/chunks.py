@@ -1,8 +1,23 @@
+"""
+Text chunking utilities.
+
+Splits a long string into smaller, overlapping chunks so downstream
+consumers (for example embeddings or retrieval) get manageable units of
+text while still preserving context across chunk boundaries.
+"""
+
+
 def chunk_text(
     text: str,
     chunk_size: int = 1000,
     overlap: int = 200,
 ) -> list[str]:
+    """
+    Split ``text`` into chunks of at most ``chunk_size`` characters.
+
+    Consecutive chunks share ``overlap`` characters so sentences spanning a
+    boundary are not lost. Returns an empty list for blank input.
+    """
 
     if chunk_size <= 0:
         raise ValueError("chunk_size must be greater than 0")
@@ -31,10 +46,7 @@ def chunk_text(
         if end == len(text):
             break
 
+        # Step back by `overlap` so the next chunk re-includes context.
         start = end - overlap
 
     return chunks
-
-
-
-

@@ -1,3 +1,9 @@
+"""
+Dev helper: process the first document in the database and print the result.
+
+Run with: python test_processing_service.py
+"""
+
 import asyncio
 
 from sqlalchemy import select
@@ -8,6 +14,7 @@ from processing_service import process_document
 
 
 async def main():
+    """Process one document synchronously and report its final status."""
 
     # Find a document ID
     async with SessionLocal() as db:

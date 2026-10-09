@@ -1,3 +1,11 @@
+"""
+Core document processing logic.
+
+Runs inside the ARQ worker: claims a document, extracts and cleans its
+text, splits it into chunks, and persists the result. The claim step is
+atomic so concurrent workers cannot process the same document twice.
+"""
+
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
@@ -13,10 +21,19 @@ from text_cleaner import clean_text
 async def process_document(
     document_id: int,
 ) -> None:
+    """
+    Process one document end to end.
+
+    Claims the document, extracts/cleans/chunks its text, replaces any
+    existing chunks, and marks it "done". On failure the document is marked
+    "failed" with the error message and the exception is re-raised so ARQ can
+    record (and optionally retry) the job.
+    """
 
     async with SessionLocal() as db:
 
-        # 1. Atomically claim the document for processing.
+        # 1. Atomically claim the document for processing. The condition and
+        #    the update are a single statement, so only one worker can win.
         result = await db.execute(
             update(Document)
             .where(

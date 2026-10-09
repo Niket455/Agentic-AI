@@ -1,7 +1,13 @@
+"""
+Lightweight normalization of extracted document text.
+"""
+
 import re
 
 
 def clean_text(text: str) -> str:
+    """Collapse redundant whitespace while preserving paragraph breaks."""
+
     # Remove spaces/tabs at the beginning and end of each line
     text = re.sub(r"[ \t]+", " ", text)
 

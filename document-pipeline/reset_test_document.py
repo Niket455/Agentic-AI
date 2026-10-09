@@ -1,3 +1,9 @@
+"""
+Dev helper: reset a single document to "pending" so it can be reprocessed.
+
+Run with: python reset_test_document.py
+"""
+
 import asyncio
 
 from sqlalchemy import delete, select
@@ -6,10 +12,13 @@ from database import SessionLocal
 from models import Document, DocumentChunk
 
 
+# Document to reset.
 DOCUMENT_ID = 1
 
 
 async def main():
+    """Delete the document's chunks and clear its processing fields."""
+
     async with SessionLocal() as db:
 
         result = await db.execute(

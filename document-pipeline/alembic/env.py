@@ -1,3 +1,10 @@
+"""
+Alembic migration environment.
+
+Connects Alembic to the project's async SQLAlchemy engine and model metadata
+so that ``alembic revision --autogenerate`` can detect schema changes.
+"""
+
 import asyncio
 from logging.config import fileConfig
 

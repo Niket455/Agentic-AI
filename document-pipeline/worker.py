@@ -1,3 +1,9 @@
+"""
+ARQ worker entry point.
+
+Start the worker with:  arq worker.WorkerSettings
+"""
+
 from arq import Retry
 from arq.connections import RedisSettings
 
@@ -19,10 +25,13 @@ async def process_document_job(
 
 
 class WorkerSettings:
+    """Configuration ARQ reads when starting the worker."""
+
     functions = [
         process_document_job,
     ]
 
+    # Must match the settings the API uses to enqueue jobs.
     redis_settings = RedisSettings(
         host="127.0.0.1",
         port=6379,

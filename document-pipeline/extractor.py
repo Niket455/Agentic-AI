@@ -1,3 +1,7 @@
+"""
+Text extraction from the supported document formats (.pdf and .docx).
+"""
+
 from pathlib import Path
 
 from docx import Document as DocxDocument
@@ -5,6 +9,8 @@ from pypdf import PdfReader
 
 
 def extract_pdf_text(file_path: Path) -> str:
+    """Extract and join the text of every page in a PDF."""
+
     reader = PdfReader(file_path)
 
     text = []
@@ -19,6 +25,8 @@ def extract_pdf_text(file_path: Path) -> str:
 
 
 def extract_docx_text(file_path: Path) -> str:
+    """Extract and join the text of every paragraph in a DOCX file."""
+
     document = DocxDocument(str(file_path))
 
     paragraphs = []
@@ -31,6 +39,8 @@ def extract_docx_text(file_path: Path) -> str:
 
 
 def extract_text(file_path: Path) -> str:
+    """Dispatch to the extractor that matches the file extension."""
+
     extension = file_path.suffix.lower()
 
     if extension == ".pdf":

@@ -1,0 +1,20 @@
+# Web API
+fastapi
+uvicorn[standard]
+
+# Database / migrations
+sqlalchemy
+aiosqlite
+alembic
+
+# Validation
+pydantic
+
+# Queue / workers
+arq
+redis
+
+# File handling / extraction
+aiofiles
+pypdf
+python-docx

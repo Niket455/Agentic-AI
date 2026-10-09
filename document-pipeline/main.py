@@ -1,3 +1,12 @@
+"""
+FastAPI application for the document processing pipeline.
+
+The upload endpoint stores a file on disk, records it in the database with
+status "pending", and queues an ARQ job in Redis. A separate worker process
+does the heavy lifting and updates the document status; clients poll the API
+to observe progress and read the resulting chunks.
+"""
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -30,6 +39,8 @@ from schemas import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Open a shared Redis pool on startup and release it on shutdown."""
+
     app.state.redis = await create_redis_pool()
 
     yield
@@ -42,6 +53,8 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def home():
+    """Simple health/hello endpoint."""
+
     return {"message": "Document Processing API"}
 
 
@@ -50,6 +63,8 @@ async def create_document(
     document: DocumentCreate, #validated request data
     db: AsyncSession = Depends(get_db), # FastAPI automatically gives endpoint a database session.
 ):
+    """Create a metadata-only document record (no file, no processing job)."""
+
     #takes data from the Pydantic schema and creates a SQLAlchemy model.
     new_document = Document(
         filename=document.filename,
@@ -69,6 +84,8 @@ async def create_document(
 async def get_documents(
     db: AsyncSession = Depends(get_db),
 ):
+    """Return every document in the database."""
+
     result = await db.execute(
         select(Document)
     )
@@ -82,6 +99,8 @@ async def get_document(
     doc_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    """Return a single document by id, or 404 if it does not exist."""
+
     result = await db.execute(
         select(Document).where(Document.id == doc_id)
     )
@@ -106,6 +125,8 @@ async def update_document(
     document_data: DocumentUpdate,
     db: AsyncSession = Depends(get_db),
 ):
+    """Apply a partial update to a document and return the updated record."""
+
     result = await db.execute(
         select(Document).where(Document.id == doc_id)
     )
@@ -118,6 +139,7 @@ async def update_document(
             detail="Document not found",
         )
 
+    # Only the fields the client actually sent.
     update_data = document_data.model_dump(exclude_unset=True)
 
     for field, value in update_data.items():
@@ -134,6 +156,8 @@ async def delete_document(
     doc_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    """Delete a document by id."""
+
     result = await db.execute(
         select(Document).where(Document.id == doc_id)
     )
@@ -153,6 +177,7 @@ async def delete_document(
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# File types the upload endpoint accepts.
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 
 ALLOWED_CONTENT_TYPES = {
@@ -170,12 +195,20 @@ async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Validate and store an uploaded file, then queue it for processing.
+
+    Returns 202 Accepted immediately; the ARQ worker processes the file
+    asynchronously and updates the document's status.
+    """
+
     if not file.filename:
         raise HTTPException(
             status_code=400,
             detail="Filename is missing",
         )
 
+    # Strip any directory components to prevent path traversal.
     original_filename = Path(file.filename).name
     extension = Path(original_filename).suffix.lower()
 
@@ -193,6 +226,7 @@ async def upload_document(
             detail="Unsupported file type",
         )
 
+    # Store under a random name to avoid collisions.
     stored_filename = f"{uuid4().hex}{extension}"
     file_path = UPLOAD_DIR / stored_filename
 
@@ -205,6 +239,7 @@ async def upload_document(
             "wb",
         ) as output_file:
 
+            # Stream in 1 MiB blocks so large files stay out of memory.
             while chunk := await file.read(1024 * 1024):
                 file_size += len(chunk)
                 await output_file.write(chunk)
@@ -245,6 +280,7 @@ async def upload_document(
         return new_document
 
     except Exception:
+        # Undo uncommitted database work and remove the stored file.
         await db.rollback()
 
         if file_path.exists():
@@ -263,6 +299,8 @@ async def get_document_chunks(
     doc_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    """Return all text chunks of a document, ordered by their index."""
+
     # First check that the document exists
     document_result = await db.execute(
         select(Document).where(Document.id == doc_id)
